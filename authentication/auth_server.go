@@ -81,12 +81,6 @@ func getUserFromSession(r *http.Request) (*utils.User, error) {
 	return utils.FindUser(utils.Users, username), nil
 }
 
-// func signupHandler(w http.ResponseWriter, r *http.Request) {
-// 	// Register a user to the users database
-// 	fmt.Println("Signup handler hello")
-// 	w.Write([]byte("Signup handler hello"))
-// }
-
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Logout handler hello")
 
@@ -112,6 +106,7 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Login handler hello")
+	replyToPEP("/welcome", "8081")
 
 	if r.Method == http.MethodPost {
 
@@ -124,7 +119,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Password authentication
 		if !utils.AuthenticateUser(username, password) {
-			http.Error(w, "Password authentication failed", http.StatusUnauthorized)
+			replyToPEP("/error", "8081")
+			// http.Error(w, "Password authentication failed", http.StatusUnauthorized)
 			return
 		}
 
@@ -137,10 +133,12 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Error setting user session", http.StatusInternalServerError)
 				return
 			}
-			http.Redirect(w, r, "/welcome", http.StatusSeeOther)
+			// Reply to PEP
+			replyToPEP("/welcome", "8081")
 			return
 		} else {
-			http.Error(w, "Fingerprint check failed", http.StatusUnauthorized)
+			replyToPEP("/error", "8081")
+			// http.Error(w, "Fingerprint check failed", http.StatusUnauthorized)
 			return
 		}
 	}
@@ -225,7 +223,7 @@ func replyToPEP(path, port string) {
 		}
 	}
 
-	log.Printf("CAFile: %s", caCertFile)
+	// log.Printf("CAFile: %s", caCertFile)
 	caCert, err := ioutil.ReadFile(caCertFile)
 	if err != nil {
 		log.Fatalf("Error opening cert file %s, Error: %s", caCertFile, err)
@@ -240,6 +238,8 @@ func replyToPEP(path, port string) {
 			RootCAs:      caCertPool,
 		},
 	}
+
+	fmt.Printf("https://%s:%s%s", srvhost, port, path)
 
 	client := http.Client{Transport: t, Timeout: 15 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:%s%s", srvhost, port, path), bytes.NewBuffer([]byte("")))
@@ -264,10 +264,6 @@ func replyToPEP(path, port string) {
 	}
 
 	fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, body)
-}
-
-func defaultHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("E")
 }
 
 func main() {
@@ -303,7 +299,7 @@ Options:
 			  3 - if provided, verify the client certificate is authorized
 			  4 - require certificate and verify it's authorized`
 
-	if *help == true {
+	if *help {
 		fmt.Println(usage)
 		return
 	}
@@ -325,15 +321,10 @@ Options:
 	router := mux.NewRouter()
 
 	// Protected routes, requiring user login
-	router.Handle("/welcome", authMiddleware(http.HandlerFunc(welcomeHandler))).Methods(http.MethodGet)
-	router.Handle("/logout", authMiddleware(http.HandlerFunc(logoutHandler))).Methods(http.MethodGet)
+	router.Handle("/welcome", authMiddleware(verifyHostMiddleware(http.HandlerFunc(welcomeHandler)))).Methods(http.MethodGet)
+	router.Handle("/logout", authMiddleware(verifyHostMiddleware(http.HandlerFunc(logoutHandler)))).Methods(http.MethodGet)
 
-	// Debating if it needs implementation
-	// router.HandleFunc("/signup", signupHandler).Methods(http.MethodPost)
-
-	router.HandleFunc("/login", loginHandler).Methods(http.MethodPost)
-	// router.HandleFunc("/", defaultHandler).Methods(http.MethodGet)
-	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
+	router.HandleFunc("/login", loginHandler).Methods(http.MethodPost, http.MethodGet)
 	http.Handle("/", router)
 
 	// Create a channel to synchronize server startup

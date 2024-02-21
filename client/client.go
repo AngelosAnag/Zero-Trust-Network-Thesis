@@ -13,13 +13,14 @@ import (
 	"time"
 )
 
+// Change that to the appropriate container path
 var certificatePathPrefix = "/home/angelos/Desktop/Thesis_Stuff/certificates/out/"
 
 func main() {
 	help := flag.Bool("help", false, "Optional, prints usage info")
 	// Hosts should become the container names in the future
 	srvhost := flag.String("srvhost", "localhost", "The server's host name")
-	port := flag.String("port", "443", "The https port, defaults to 443")
+	port := flag.String("port", "8081", "The https port, defaults to 443")
 	caCertFile := flag.String("cacert", certificatePathPrefix+"ThesisCA.crt", "Required, the name of the CA that signed the server's certificate")
 	clientCertFile := flag.String("clientcert", certificatePathPrefix+"client.crt", "Required, the name of the client's certificate file")
 	clientKeyFile := flag.String("clientkey", certificatePathPrefix+"client.key", "Required, the file name of the clients's private key file")
