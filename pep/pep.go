@@ -1,6 +1,7 @@
 package main
 
 import (
+	"authentication/utils"
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
@@ -12,25 +13,84 @@ import (
 	"net/url"
 	"time"
 
+	rdb "github.com/boj/redistore"
 	"github.com/gorilla/mux"
 )
 
 // Change that to the appropriate container path
 var certificatePathPrefix = "/home/angelos/Desktop/Thesis_Stuff/certificates/out/"
 
+var store *rdb.RediStore
+var sessionSecretKey = utils.InitSecretKey(filePath)
+
+const (
+	sessionName      = "user_session"
+	contextKeyUserID = "user_id"
+	filePath         = "/etc/profile.d/session_secret.sh"
+)
+
+func setUserSession(w http.ResponseWriter, r *http.Request, user *utils.User) error {
+	// Create a new session
+	session, err := store.New(r, sessionName)
+	if err != nil {
+		return err
+	}
+
+	// Store user-specific information in the session
+	session.Values["user_id"] = user.ID
+	session.Values["username"] = user.Username
+	session.Values["authenticated"] = false
+	session.Values["trust_lvl"] = user.TrustLevel
+	session.Values["groups"] = user.Groups
+
+	// Save the session
+	if err := session.Save(r, w); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func connectToRedis() {
+	// Fetch new store.
+	localstore, err := rdb.NewRediStore(10, "tcp", ":6379", "", []byte(sessionSecretKey))
+	store = localstore
+	if err != nil {
+		panic(err)
+	}
+	// store = sessions.NewCookieStore([]byte(sessionSecretKey))
+}
+
 func loginHandlerRedirect(w http.ResponseWriter, r *http.Request) {
-	// Send the login request to the / route on auth_server
-	aggregateRequest("/login", "8080")
+
+	// Should connect to redis, create the store and set the user session here.
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	fmt.Println(username, password)
+
+	aggregateRequest(w, r, "/login", "8080")
+}
+
+func errorHandler(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "templates/error.html")
 }
 
 func welcomeHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(300)
+	fmt.Println("Welcome handler hello")
+	http.ServeFile(w, r, "templates/welcome.html")
 }
 
-// func resourceHandlerRedirect(w http.ResponseWriter, r *http.Request) {
-// 	// Send the login request to the / route on dedicated resource
-// 	aggregateRequest("/", "8082")
-// }
+func authResponseReceiver(w http.ResponseWriter, r *http.Request) {
+
+	// Forward response back to client
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(r.Body)
+	respBody := buf.String()
+
+	w.WriteHeader(205)
+	w.Write([]byte(respBody))
+}
 
 func getTLSConfig(host, caCertFile string, certOpt tls.ClientAuthType) *tls.Config {
 	var caCert []byte
@@ -58,7 +118,7 @@ func getTLSConfig(host, caCertFile string, certOpt tls.ClientAuthType) *tls.Conf
 	}
 }
 
-func aggregateRequest(path, port string) {
+func aggregateRequest(w http.ResponseWriter, r *http.Request, path, port string) {
 	// This function should take another argument as input, which would be the host to which we re aggregating to
 	// On testing everything is done to localhost so this step is optional
 	// The request is aggregated to localhost but this is basically our auth_server
@@ -96,8 +156,20 @@ func aggregateRequest(path, port string) {
 	}
 
 	client := http.Client{Transport: t, Timeout: 15 * time.Second}
-	fmt.Printf("https://%s:%s%s", srvhost, port, path)
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:%s%s", srvhost, port, path), bytes.NewBuffer([]byte("")))
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// you can reassign the body if you need to parse it as multipart
+	r.Body = ioutil.NopCloser(bytes.NewReader(body))
+
+	proxy_url := fmt.Sprintf("https://%s:%s%s", srvhost, port, path)
+	fmt.Println(proxy_url)
+
+	req, err := http.NewRequest(r.Method, proxy_url, bytes.NewReader(body))
+
 	if err != nil {
 		log.Fatalf("unable to create http request due to error %s", err)
 	}
@@ -111,17 +183,35 @@ func aggregateRequest(path, port string) {
 			log.Fatalf("Unexpected error received: %s", err)
 		}
 	}
-
-	body, err := ioutil.ReadAll(resp.Body)
 	defer resp.Body.Close()
-	if err != nil {
-		log.Fatalf("unexpected error reading response body: %s", err)
-	}
 
-	fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, body)
+	fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, resp.Body)
+}
+
+func verifyHostMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		allowedHost := "localhost"
+
+		// Check if the request's host matches the allowed host
+		if r.Host != allowedHost {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		// If the host is valid, proceed to the next handler
+		next.ServeHTTP(w, r)
+	})
 }
 
 func main() {
+
+	// Display a page with available resources for user to pick from
+	// Create session cookie for user to be managed by portals
+	// Receive response and redirect user to authentication portal
+	// Receive response and redirect to authorization portal
+	// Receive response and redirect to resource
+	// Delete session cookie and close the connection
+
 	help := flag.Bool("help", false, "Optional, prints usage info")
 	// Hosts should become the container names in the future, remember to also change the keys and certificate values
 	host := flag.String("host", "localhost", "Required flag, must be the hostname that is resolvable via DNS, or 'localhost'")
@@ -157,7 +247,6 @@ Options:
 	if *host == "" || *serverCert == "" || *caCert == "" || *srvKey == "" {
 		log.Fatalf("One or more required fields missing:\n%s", usage)
 	}
-
 	if *certOpt < 0 || *certOpt > 4 {
 		log.Fatalf("Invalid value %d, provided for 'certopt' flag. It must be a number between 0 and 4 inclusive.\n%s", *certOpt, usage)
 	}
@@ -168,12 +257,16 @@ Options:
 		WriteTimeout: 10 * time.Second,
 		TLSConfig:    getTLSConfig(*host, *caCert, tls.ClientAuthType(*certOpt)),
 	}
+
 	router := mux.NewRouter()
 
-	router.Handle("/welcome", http.HandlerFunc(welcomeHandler))
+	router.Handle("/gateway-login", http.HandlerFunc(loginHandlerRedirect)).Methods(http.MethodPost)
+	router.Handle("/authResponse", http.HandlerFunc(authResponseReceiver))
+	router.Handle("/welcome", verifyHostMiddleware(http.HandlerFunc(welcomeHandler))) // Only allow welcome route from Auth server
+	router.Handle("/error", http.HandlerFunc(errorHandler))
+
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 	http.Handle("/", router)
-	http.HandleFunc("/login", loginHandlerRedirect)
 
 	log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
 	if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {

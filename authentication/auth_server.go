@@ -28,28 +28,6 @@ const (
 	filePath         = "/etc/profile.d/session_secret.sh"
 )
 
-func setUserSession(w http.ResponseWriter, r *http.Request, user *utils.User) error {
-	// Create a new session
-	session, err := store.New(r, sessionName)
-	if err != nil {
-		return err
-	}
-
-	// Store user-specific information in the session
-	session.Values["user_id"] = user.ID
-	session.Values["username"] = user.Username
-	session.Values["authenticated"] = true
-	session.Values["trust_lvl"] = user.TrustLevel
-	session.Values["groups"] = user.Groups
-
-	// Save the session
-	if err := session.Save(r, w); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func connectToRedis() {
 	// Fetch new store.
 	localstore, err := rdb.NewRediStore(10, "tcp", ":6379", "", []byte(sessionSecretKey))
@@ -58,7 +36,6 @@ func connectToRedis() {
 		panic(err)
 	}
 	// store = sessions.NewCookieStore([]byte(sessionSecretKey))
-
 }
 
 func getUserFromSession(r *http.Request) (*utils.User, error) {
@@ -106,58 +83,53 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Login handler hello")
-	replyToPEP("/welcome", "8081")
 
-	if r.Method == http.MethodPost {
-
-		username := r.FormValue("username")
-		password := r.FormValue("password")
-
-		// Should return an error value also
-		utils.CreateUserObjectFromDB(username)
-		authenticatingUser := utils.FindUser(utils.Users, username)
-
-		// Password authentication
-		if !utils.AuthenticateUser(username, password) {
-			replyToPEP("/error", "8081")
-			// http.Error(w, "Password authentication failed", http.StatusUnauthorized)
-			return
-		}
-
-		// Check fingerprint after successful password authentication
-		fingerprintAuthenticator := &utils.MockFingerprintAuthenticator{}
-		if fingerprintAuthenticator.CheckFingerprint(username) {
-			// MFA completed, save the user session and redirect to welcome page
-			if err := setUserSession(w, r, authenticatingUser); err != nil {
-				fmt.Println(err)
-				http.Error(w, "Error setting user session", http.StatusInternalServerError)
-				return
-			}
-			// Reply to PEP
-			replyToPEP("/welcome", "8081")
-			return
-		} else {
-			replyToPEP("/error", "8081")
-			// http.Error(w, "Fingerprint check failed", http.StatusUnauthorized)
-			return
-		}
-	}
-	// Display the login form.
-	http.ServeFile(w, r, "index.html")
-}
-
-func welcomeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Welcome handler hello")
-
-	// Retrieve user information and session name from the session
-	user, err := getUserFromSession(r)
-	fmt.Println(user)
-	if err != nil {
-		http.Error(w, "Error retrieving user from session", http.StatusInternalServerError)
+	if r.Method != http.MethodPost {
+		fmt.Println("Non Post request on login handler")
+		http.Error(w, "GET request on POST endpoint", http.StatusBadRequest)
 		return
 	}
 
-	http.ServeFile(w, r, "templates/welcome.html")
+	session, err := store.Get(r, sessionName)
+
+	if err != nil {
+		fmt.Println(err)
+		http.Error(w, "Error setting user session", http.StatusInternalServerError)
+		return
+	}
+
+	user, _ := getUserFromSession(r)
+	// This line breaks with null pointer dereference
+	fmt.Println(user.Username, user.Password)
+	username, password := user.Username, user.Password
+
+	// Should return an error value also
+	utils.CreateUserObjectFromDB(username)
+	// authenticatingUser := utils.FindUser(utils.Users, username)
+	fmt.Println("Created user")
+
+	// Password authentication
+	if !utils.AuthenticateUser(username, password) {
+		replyToPEP("/error", "8081")
+		// http.Error(w, "Password authentication failed", http.StatusUnauthorized)
+		return
+	}
+	fmt.Println("Accepted password")
+
+	// Check fingerprint after successful password authentication
+	fingerprintAuthenticator := &utils.MockFingerprintAuthenticator{}
+	if fingerprintAuthenticator.CheckFingerprint(username) {
+		// MFA completed, update the user status to authenticated and redirect to welcome page
+
+		session.Values["authenticated"] = true
+
+		// Reply to PEP
+		replyToPEP("/welcome", "8081")
+		return
+	}
+
+	replyToPEP("/error", "8081")
+	// http.Error(w, "Fingerprint check failed", http.StatusUnauthorized)
 }
 
 func authMiddleware(next http.Handler) http.Handler {
@@ -321,10 +293,9 @@ Options:
 	router := mux.NewRouter()
 
 	// Protected routes, requiring user login
-	router.Handle("/welcome", authMiddleware(verifyHostMiddleware(http.HandlerFunc(welcomeHandler)))).Methods(http.MethodGet)
 	router.Handle("/logout", authMiddleware(verifyHostMiddleware(http.HandlerFunc(logoutHandler)))).Methods(http.MethodGet)
 
-	router.HandleFunc("/login", loginHandler).Methods(http.MethodPost, http.MethodGet)
+	router.Handle("/login", http.HandlerFunc(loginHandler)).Methods(http.MethodPost, http.MethodGet)
 	http.Handle("/", router)
 
 	// Create a channel to synchronize server startup

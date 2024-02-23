@@ -71,7 +71,7 @@ Options:
 	}
 
 	client := http.Client{Transport: t, Timeout: 15 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:%s", *srvhost, *port), bytes.NewBuffer([]byte("")))
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:%s/gateway-login", *srvhost, *port), bytes.NewBuffer([]byte("")))
 	if err != nil {
 		log.Fatalf("unable to create http request due to error %s", err)
 	}
