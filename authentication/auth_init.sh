@@ -1,2 +1,2 @@
 go build
-./authentication
+sudo ./authentication

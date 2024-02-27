@@ -35,7 +35,6 @@ func setUserSession(w http.ResponseWriter, r *http.Request, user *utils.User) er
 	if err != nil {
 		return err
 	}
-
 	session.ID = fmt.Sprint(user.ID)
 
 	// Store user-specific information in the session
@@ -56,6 +55,7 @@ func connectToRedis() {
 	// Fetch new store.
 	localstore, err := rdb.NewRediStore(100, "tcp", ":6379", "", []byte(sessionSecretKey))
 	store = localstore
+	fmt.Println(store)
 	if err != nil {
 		panic(err)
 	}
@@ -275,9 +275,10 @@ Options:
 	http.Handle("/", router)
 
 	go connectToRedis()
+	defer store.Close()
+
 	log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
 	if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {
 		log.Fatal(err)
 	}
-
 }

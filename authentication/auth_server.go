@@ -36,6 +36,7 @@ func connectToRedis() {
 	// Fetch new store.
 	localstore, err := rdb.NewRediStore(10, "tcp", ":6379", "", []byte(sessionSecretKey))
 	store = localstore
+	fmt.Println(store)
 	if err != nil {
 		panic(err)
 	}
@@ -92,7 +93,10 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session, err := store.Get(r, sessionName)
-	fmt.Println(session.ID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("This is a session:\n", session)
 
 	if err != nil {
 		fmt.Println(err)
@@ -248,6 +252,14 @@ func replyToPEP(path, port string) {
 	fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, body)
 }
 
+func testHandler(w http.ResponseWriter, r *http.Request) {
+	session, err := store.Get(r, sessionName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("This is a session:\n", session)
+}
+
 func main() {
 
 	// Wait for request from PEP
@@ -288,11 +300,9 @@ Options:
 	if *host == "" || *serverCert == "" || *caCert == "" || *srvKey == "" {
 		log.Fatalf("One or more required fields missing:\n%s", usage)
 	}
-
 	if *certOpt < 0 || *certOpt > 4 {
 		log.Fatalf("Invalid value %d, provided for 'certopt' flag. It must be a number between 0 and 4 inclusive.\n%s", *certOpt, usage)
 	}
-
 	server := &http.Server{
 		Addr:         ":" + *port,
 		ReadTimeout:  5 * time.Minute, // 5 min to allow for delays when 'curl' on OSx prompts for username/password
@@ -306,10 +316,12 @@ Options:
 	router.Handle("/logout", authMiddleware(verifyHostMiddleware(http.HandlerFunc(logoutHandler)))).Methods(http.MethodGet)
 
 	router.Handle("/login", http.HandlerFunc(loginHandler)).Methods(http.MethodPost, http.MethodGet)
+	router.Handle("/test", http.HandlerFunc(testHandler)).Methods(http.MethodGet)
 	http.Handle("/", router)
 
 	// Run the application server and connect to the sessions storage in goroutines
 	go connectToRedis()
+	defer store.Close()
 	log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
 	if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {
 		log.Fatal(err)
