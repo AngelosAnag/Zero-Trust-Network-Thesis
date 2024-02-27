@@ -15,8 +15,12 @@ import (
 
 	rdb "github.com/boj/redistore"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/sessions"
 	_ "github.com/lib/pq"
 )
+
+// Change that to the appropriate container path
+var certificatePathPrefix = "/home/angelos/Desktop/Thesis_Stuff/certificates/out/"
 
 // var store *sessions.CookieStore
 var store *rdb.RediStore
@@ -38,11 +42,7 @@ func connectToRedis() {
 	// store = sessions.NewCookieStore([]byte(sessionSecretKey))
 }
 
-func getUserFromSession(r *http.Request) (*utils.User, error) {
-	session, err := store.Get(r, sessionName)
-	if err != nil {
-		return nil, err
-	}
+func getUserFromSession(r *http.Request, session *sessions.Session) (*utils.User, error) {
 
 	// Retrieve user-specific information from the session
 	_, ok := session.Values["user_id"].(int)
@@ -55,7 +55,8 @@ func getUserFromSession(r *http.Request) (*utils.User, error) {
 		return nil, fmt.Errorf("username not found in session")
 	}
 
-	return utils.FindUser(utils.Users, username), nil
+	user := utils.FindUser(utils.Users, username)
+	return user, nil
 }
 
 func logoutHandler(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +83,7 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("Login handler hello")
+	// fmt.Println("Login handler hello")
 
 	if r.Method != http.MethodPost {
 		fmt.Println("Non Post request on login handler")
@@ -91,6 +92,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session, err := store.Get(r, sessionName)
+	fmt.Println(session.ID)
 
 	if err != nil {
 		fmt.Println(err)
@@ -98,8 +100,19 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, _ := getUserFromSession(r)
-	// This line breaks with null pointer dereference
+	user, err := getUserFromSession(r, session)
+	if err != nil {
+		fmt.Println("Error retrieving user from session:", err)
+		http.Error(w, "Error retrieving user from session", http.StatusInternalServerError)
+		return
+	}
+
+	if user == nil {
+		fmt.Println("User not found in session")
+		http.Error(w, "User not found in session", http.StatusUnauthorized)
+		return
+	}
+
 	fmt.Println(user.Username, user.Password)
 	username, password := user.Username, user.Password
 
@@ -129,7 +142,6 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	replyToPEP("/error", "8081")
-	// http.Error(w, "Fingerprint check failed", http.StatusUnauthorized)
 }
 
 func authMiddleware(next http.Handler) http.Handler {
@@ -150,7 +162,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		user, err := getUserFromSession(r)
+		user, err := getUserFromSession(r, session)
 		if err != nil || user == nil {
 			http.Error(w, "Auth middleware log: Error retrieving user from session", http.StatusInternalServerError)
 			return
@@ -175,8 +187,6 @@ func verifyHostMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
-var certificatePathPrefix = "/home/angelos/Desktop/Thesis_Stuff/certificates/out/"
 
 func replyToPEP(path, port string) {
 
@@ -298,26 +308,16 @@ Options:
 	router.Handle("/login", http.HandlerFunc(loginHandler)).Methods(http.MethodPost, http.MethodGet)
 	http.Handle("/", router)
 
-	// Create a channel to synchronize server startup
-	serverReady := make(chan struct{})
-
 	// Run the application server and connect to the sessions storage in goroutines
 	go connectToRedis()
-	go func() {
+	log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
+	if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {
+		log.Fatal(err)
+	}
 
-		log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
-		if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {
-			log.Fatal(err)
-		}
-
-		// err := http.ListenAndServe(":8080", nil)
-		// if err != nil {
-		// 	log.Fatal(err)
-		// }
-		close(serverReady)
-	}()
-
-	// Wait for the server to be ready
-	<-serverReady
+	// err := http.ListenAndServe(":8080", nil)
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
 }

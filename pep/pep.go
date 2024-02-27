@@ -36,6 +36,8 @@ func setUserSession(w http.ResponseWriter, r *http.Request, user *utils.User) er
 		return err
 	}
 
+	session.ID = fmt.Sprint(user.ID)
+
 	// Store user-specific information in the session
 	session.Values["user_id"] = user.ID
 	session.Values["username"] = user.Username
@@ -47,13 +49,12 @@ func setUserSession(w http.ResponseWriter, r *http.Request, user *utils.User) er
 	if err := session.Save(r, w); err != nil {
 		return err
 	}
-
 	return nil
 }
 
 func connectToRedis() {
 	// Fetch new store.
-	localstore, err := rdb.NewRediStore(10, "tcp", ":6379", "", []byte(sessionSecretKey))
+	localstore, err := rdb.NewRediStore(100, "tcp", ":6379", "", []byte(sessionSecretKey))
 	store = localstore
 	if err != nil {
 		panic(err)
@@ -63,11 +64,16 @@ func connectToRedis() {
 
 func loginHandlerRedirect(w http.ResponseWriter, r *http.Request) {
 
-	// Should connect to redis, create the store and set the user session here.
-	username := r.FormValue("username")
-	password := r.FormValue("password")
+	if r.Method == http.MethodPost {
 
-	fmt.Println(username, password)
+		username := r.FormValue("username")
+
+		utils.CreateUserObjectFromDB(username)
+		authenticatingUser := utils.FindUser(utils.Users, username)
+		setUserSession(w, r, authenticatingUser)
+
+		// fmt.Println(authenticatingUser)
+	}
 
 	aggregateRequest(w, r, "/login", "8080")
 }
@@ -268,8 +274,10 @@ Options:
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 	http.Handle("/", router)
 
+	go connectToRedis()
 	log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
 	if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {
 		log.Fatal(err)
 	}
+
 }
