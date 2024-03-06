@@ -22,7 +22,6 @@ import (
 // Change that to the appropriate container path
 var certificatePathPrefix = "/home/angelos/Desktop/Thesis_Stuff/certificates/out/"
 
-// var store *sessions.CookieStore
 var store *rdb.RediStore
 var sessionSecretKey = utils.InitSecretKey(filePath)
 
@@ -33,17 +32,17 @@ const (
 )
 
 func connectToRedis() {
+	// fmt.Println(sessionSecretKey, sessionName)
 	// Fetch new store.
 	localstore, err := rdb.NewRediStore(10, "tcp", ":6379", "", []byte(sessionSecretKey))
 	store = localstore
-	fmt.Println(store)
 	if err != nil {
 		panic(err)
 	}
 	// store = sessions.NewCookieStore([]byte(sessionSecretKey))
 }
 
-func getUserFromSession(r *http.Request, session *sessions.Session) (*utils.User, error) {
+func getUserFromSession(session *sessions.Session) (*utils.User, error) {
 
 	// Retrieve user-specific information from the session
 	_, ok := session.Values["user_id"].(int)
@@ -52,10 +51,11 @@ func getUserFromSession(r *http.Request, session *sessions.Session) (*utils.User
 	}
 
 	username, ok := session.Values["username"].(string)
+	fmt.Println("getUserFromSession:")
+	fmt.Println(username)
 	if !ok {
 		return nil, fmt.Errorf("username not found in session")
 	}
-
 	user := utils.FindUser(utils.Users, username)
 	return user, nil
 }
@@ -86,25 +86,26 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	// fmt.Println("Login handler hello")
 
-	if r.Method != http.MethodPost {
-		fmt.Println("Non Post request on login handler")
-		http.Error(w, "GET request on POST endpoint", http.StatusBadRequest)
-		return
-	}
+	// if r.Method != http.MethodPost {
+	// 	fmt.Println("Non Post request on login handler")
+	// 	http.Error(w, "GET request on POST endpoint", http.StatusBadRequest)
+	// 	return
+	// }
 
 	session, err := store.Get(r, sessionName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("This is a session:\n", session)
-
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, "Error setting user session", http.StatusInternalServerError)
 		return
 	}
+	// fmt.Println("This is a session, i am the login handler!:\n", session)
+	username := session.Values["username"].(string)
+	givenPassword := session.Values["password"].(string)
 
-	user, err := getUserFromSession(r, session)
+	utils.CreateUserObjectFromDB(username)
+	user, err := getUserFromSession(session)
+	fmt.Println(*user)
+
 	if err != nil {
 		fmt.Println("Error retrieving user from session:", err)
 		http.Error(w, "Error retrieving user from session", http.StatusInternalServerError)
@@ -116,17 +117,9 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User not found in session", http.StatusUnauthorized)
 		return
 	}
-
-	fmt.Println(user.Username, user.Password)
-	username, password := user.Username, user.Password
-
-	// Should return an error value also
-	utils.CreateUserObjectFromDB(username)
-	// authenticatingUser := utils.FindUser(utils.Users, username)
-	fmt.Println("Created user")
-
+	fmt.Println(user.Password, givenPassword)
 	// Password authentication
-	if !utils.AuthenticateUser(username, password) {
+	if givenPassword != user.Password {
 		replyToPEP("/error", "8081")
 		// http.Error(w, "Password authentication failed", http.StatusUnauthorized)
 		return
@@ -166,7 +159,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		user, err := getUserFromSession(r, session)
+		user, err := getUserFromSession(session)
 		if err != nil || user == nil {
 			http.Error(w, "Auth middleware log: Error retrieving user from session", http.StatusInternalServerError)
 			return
@@ -252,14 +245,6 @@ func replyToPEP(path, port string) {
 	fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, body)
 }
 
-func testHandler(w http.ResponseWriter, r *http.Request) {
-	session, err := store.Get(r, sessionName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("This is a session:\n", session)
-}
-
 func main() {
 
 	// Wait for request from PEP
@@ -315,13 +300,13 @@ Options:
 	// Protected routes, requiring user login
 	router.Handle("/logout", authMiddleware(verifyHostMiddleware(http.HandlerFunc(logoutHandler)))).Methods(http.MethodGet)
 
-	router.Handle("/login", http.HandlerFunc(loginHandler)).Methods(http.MethodPost, http.MethodGet)
-	router.Handle("/test", http.HandlerFunc(testHandler)).Methods(http.MethodGet)
+	router.Handle("/login", http.HandlerFunc(loginHandler)).Methods(http.MethodGet)
 	http.Handle("/", router)
 
 	// Run the application server and connect to the sessions storage in goroutines
 	go connectToRedis()
 	defer store.Close()
+
 	log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
 	if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {
 		log.Fatal(err)

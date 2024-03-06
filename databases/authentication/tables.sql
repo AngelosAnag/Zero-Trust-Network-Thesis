@@ -9,8 +9,8 @@ CREATE TABLE IF NOT EXISTS Users (
 );
 
 INSERT INTO 
-    Users (user_id, username, passwd_hash, groups, trust)
+    Users (user_id, username,passwd_hash, groups, trust)
 VALUES
-    (1, 'tiko', 'pass1','{sudoers}', '3'),
-    (2, 'tico', 'pass2','{web}', '2'),
-    (3, 'rico', 'pass3','{testers}', '1');
+    (1, 'tiko','pass1','{sudoers}', '3'),
+    (2, 'tico','pass2','{web}', '2'),
+    (3, 'rico','pass3','{testers}', '1');

@@ -64,16 +64,6 @@ func ExtractSessionSecretKey(content string) string {
 	return ""
 }
 
-func AuthenticateUser(username, password string) bool {
-
-	for _, user := range Users {
-		if user.Username == username && user.Password == password {
-			return true
-		}
-	}
-	return false
-}
-
 func FindUser(users []User, targetUsername string) *User {
 	for i := range users {
 		if users[i].Username == targetUsername {

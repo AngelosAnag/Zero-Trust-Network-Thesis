@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -24,6 +25,7 @@ func main() {
 	caCertFile := flag.String("cacert", certificatePathPrefix+"ThesisCA.crt", "Required, the name of the CA that signed the server's certificate")
 	clientCertFile := flag.String("clientcert", certificatePathPrefix+"client.crt", "Required, the name of the client's certificate file")
 	clientKeyFile := flag.String("clientkey", certificatePathPrefix+"client.key", "Required, the file name of the clients's private key file")
+	pathFlag := os.Args[1]
 	flag.Parse()
 
 	usage := `usage:
@@ -71,7 +73,8 @@ Options:
 	}
 
 	client := http.Client{Transport: t, Timeout: 15 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:%s/gateway-login", *srvhost, *port), bytes.NewBuffer([]byte("")))
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://%s:%s/%s", *srvhost, *port, pathFlag), bytes.NewBuffer([]byte("")))
+	fmt.Println(req)
 	if err != nil {
 		log.Fatalf("unable to create http request due to error %s", err)
 	}

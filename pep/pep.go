@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"time"
 
 	rdb "github.com/boj/redistore"
@@ -29,33 +28,36 @@ const (
 	filePath         = "/etc/profile.d/session_secret.sh"
 )
 
-func setUserSession(w http.ResponseWriter, r *http.Request, user *utils.User) error {
+func setUserSession(w http.ResponseWriter, r *http.Request, user *utils.User, password string) {
 	// Create a new session
 	session, err := store.New(r, sessionName)
 	if err != nil {
-		return err
+		panic(err)
 	}
 	session.ID = fmt.Sprint(user.ID)
+	session.Options.MaxAge = 21000
+	session.Options.Secure = true
+	session.Options.SameSite = http.SameSiteNoneMode
 
 	// Store user-specific information in the session
 	session.Values["user_id"] = user.ID
 	session.Values["username"] = user.Username
+	session.Values["password"] = password //The password stored in the form
 	session.Values["authenticated"] = false
 	session.Values["trust_lvl"] = user.TrustLevel
 	session.Values["groups"] = user.Groups
 
 	// Save the session
-	if err := session.Save(r, w); err != nil {
-		return err
-	}
-	return nil
+	session.Save(r, w)
+
 }
 
 func connectToRedis() {
 	// Fetch new store.
+	// fmt.Println(sessionSecretKey, sessionName)
 	localstore, err := rdb.NewRediStore(100, "tcp", ":6379", "", []byte(sessionSecretKey))
 	store = localstore
-	fmt.Println(store)
+	// fmt.Println(store)
 	if err != nil {
 		panic(err)
 	}
@@ -67,15 +69,15 @@ func loginHandlerRedirect(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 
 		username := r.FormValue("username")
+		password := r.FormValue("password")
 
 		utils.CreateUserObjectFromDB(username)
 		authenticatingUser := utils.FindUser(utils.Users, username)
-		setUserSession(w, r, authenticatingUser)
-
-		// fmt.Println(authenticatingUser)
+		setUserSession(w, r, authenticatingUser, password)
 	}
 
 	aggregateRequest(w, r, "/login", "8080")
+	// aggregateRequest(w, r, "/test", "8080")
 }
 
 func errorHandler(w http.ResponseWriter, r *http.Request) {
@@ -131,67 +133,67 @@ func aggregateRequest(w http.ResponseWriter, r *http.Request, path, port string)
 	// Right now we re only changing the ports, in containers everything should run normally at 443 by changing the hostnames
 	// Probably... maybe... hopefully...
 	srvhost := "localhost"
-	caCertFile := certificatePathPrefix + "ThesisCA.crt"
-	// These are indeed our server's keys, but being used to aggregate a request, we momentarily become a 'client' of shorts
-	clientCertFile := certificatePathPrefix + "localhost.crt"
-	clientKeyFile := certificatePathPrefix + "localhost.key"
+	// caCertFile := certificatePathPrefix + "ThesisCA.crt"
+	// // These are indeed our server's keys, but being used to aggregate a request, we momentarily become a 'client' of shorts
+	// clientCertFile := certificatePathPrefix + "localhost.crt"
+	// clientKeyFile := certificatePathPrefix + "localhost.key"
 
-	var cert tls.Certificate
-	var err error
-	if clientCertFile != "" && clientKeyFile != "" {
-		cert, err = tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
-		if err != nil {
-			log.Fatalf("Error creating x509 keypair from client cert file %s and client key file %s", clientCertFile, clientKeyFile)
-		}
-	}
+	// var cert tls.Certificate
+	// var err error
+	// if clientCertFile != "" && clientKeyFile != "" {
+	// 	cert, err = tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+	// 	if err != nil {
+	// 		log.Fatalf("Error creating x509 keypair from client cert file %s and client key file %s", clientCertFile, clientKeyFile)
+	// 	}
+	// }
 
-	// log.Printf("CAFile: %s", caCertFile)
-	caCert, err := ioutil.ReadFile(caCertFile)
-	if err != nil {
-		log.Fatalf("Error opening cert file %s, Error: %s", caCertFile, err)
-	}
+	// // log.Printf("CAFile: %s", caCertFile)
+	// caCert, err := ioutil.ReadFile(caCertFile)
+	// if err != nil {
+	// 	log.Fatalf("Error opening cert file %s, Error: %s", caCertFile, err)
+	// }
 
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
+	// caCertPool := x509.NewCertPool()
+	// caCertPool.AppendCertsFromPEM(caCert)
 
-	t := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			RootCAs:      caCertPool,
-		},
-	}
+	// t := &http.Transport{
+	// 	TLSClientConfig: &tls.Config{
+	// 		Certificates: []tls.Certificate{cert},
+	// 		RootCAs:      caCertPool,
+	// 	},
+	// }
 
-	client := http.Client{Transport: t, Timeout: 15 * time.Second}
+	// client := http.Client{Transport: t, Timeout: 15 * time.Second}
 
-	body, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// you can reassign the body if you need to parse it as multipart
-	r.Body = ioutil.NopCloser(bytes.NewReader(body))
-
+	// body, err := ioutil.ReadAll(r.Body)
+	// if err != nil {
+	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	return
+	// }
+	// r.Body = ioutil.NopCloser(bytes.NewReader(body))
 	proxy_url := fmt.Sprintf("https://%s:%s%s", srvhost, port, path)
-	fmt.Println(proxy_url)
+	fmt.Printf("Sending request to: %s\n", proxy_url)
 
-	req, err := http.NewRequest(r.Method, proxy_url, bytes.NewReader(body))
+	http.Redirect(w, r, proxy_url, http.StatusFound)
 
-	if err != nil {
-		log.Fatalf("unable to create http request due to error %s", err)
-	}
+	// req, err := http.NewRequest(r.Method, proxy_url, bytes.NewReader(body))
 
-	resp, err := client.Do(req)
-	if err != nil {
-		switch e := err.(type) {
-		case *url.Error:
-			log.Fatalf("url.Error received on http request: %s", e)
-		default:
-			log.Fatalf("Unexpected error received: %s", err)
-		}
-	}
-	defer resp.Body.Close()
+	// if err != nil {
+	// 	log.Fatalf("Unable to create http request due to error %s", err)
+	// }
 
-	fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, resp.Body)
+	// resp, err := client.Do(req)
+	// if err != nil {
+	// 	switch e := err.(type) {
+	// 	case *url.Error:
+	// 		log.Fatalf("url.Error received on http request: %s", e)
+	// 	default:
+	// 		log.Fatalf("Unexpected error received: %s", err)
+	// 	}
+	// }
+	// defer resp.Body.Close()
+
+	// fmt.Printf("\nResponse from server: \n\tHTTP status: %s\n\tBody: %s\n", resp.Status, resp.Body)
 }
 
 func verifyHostMiddleware(next http.Handler) http.Handler {
@@ -270,12 +272,11 @@ Options:
 	router.Handle("/authResponse", http.HandlerFunc(authResponseReceiver))
 	router.Handle("/welcome", verifyHostMiddleware(http.HandlerFunc(welcomeHandler))) // Only allow welcome route from Auth server
 	router.Handle("/error", http.HandlerFunc(errorHandler))
-
 	router.PathPrefix("/").Handler(http.FileServer(http.Dir("static")))
 	http.Handle("/", router)
 
 	go connectToRedis()
-	defer store.Close()
+	// defer store.Close()
 
 	log.Printf("Starting HTTPS server on host %s and port %s", *host, *port)
 	if err := server.ListenAndServeTLS(*serverCert, *srvKey); err != nil {
