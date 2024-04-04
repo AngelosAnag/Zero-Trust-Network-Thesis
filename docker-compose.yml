@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  
+  
+
+  redis_app:
+    build:
+      context: ./app
+    container_name: webapp
+    ports:
+      - 3000:3000
+    networks:
+      - backend
+      - redis
+
+  redis_db:
+    image: redis
+    container_name: redis_db
+    ports:
+      - 6379:6379
+    networks:
+      - redis
+
+networks:
+  backend:
+  redis:
+
+volumes:
+  postgredata: {}
