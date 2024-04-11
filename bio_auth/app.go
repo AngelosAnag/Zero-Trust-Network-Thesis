@@ -6,15 +6,16 @@ import (
 )
 
 type FingerprintAuthenticator interface {
+	// Interface w/ required methods for an MFA authenticator
 	CheckFingerprint(username string) bool
 }
 
-func (m *MockFingerprintAuthenticator) CheckFingerprint() bool {
+func (m *FingerprintAuthenticatorMFA) CheckFingerprint() bool {
 	// Placeholder implementation, always returns true
 	return true
 }
 
-type MockFingerprintAuthenticator struct{}
+type FingerprintAuthenticatorMFA struct{}
 
 func headers(w http.ResponseWriter, req *http.Request) {
 
@@ -26,9 +27,19 @@ func headers(w http.ResponseWriter, req *http.Request) {
 }
 
 func authenticationHandler(w http.ResponseWriter, req *http.Request) {
-	fingerprintAuthenticator := &MockFingerprintAuthenticator{}
+	// Run MFA on the user and update his cookie
+	fingerprintAuthenticator := &FingerprintAuthenticatorMFA{}
+	fmt.Println(req.Header)
 	if fingerprintAuthenticator.CheckFingerprint() {
-		w.Write([]byte("Authentication completed"))
+		cookie := http.Cookie{
+			Name:  "user-session",
+			Value: "authenticated",
+			Path:  "/",
+		}
+		req.AddCookie(&cookie)
+		http.SetCookie(w, &cookie)
+		redirectTo := req.URL.Query().Get("redirect")
+		http.Redirect(w, req, redirectTo, http.StatusTemporaryRedirect)
 	}
 }
 
