@@ -1,0 +1,261 @@
+_format_version: "1.1"
+services:
+- connect_timeout: 60000
+  host: localhost
+  name: Biometric_auth
+  port: 3002
+  protocol: http
+  read_timeout: 60000
+  retries: 5
+  write_timeout: 60000
+  routes:
+  - name: Biometric-Authentication
+    paths:
+    - /bio-mfa
+    path_handling: v0
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 0
+    strip_path: true
+    tags:
+    - MFA server
+    https_redirect_status_code: 426
+    request_buffering: true
+    response_buffering: true
+- connect_timeout: 60000
+  host: localhost
+  name: non_secure_server
+  port: 3000
+  protocol: http
+  read_timeout: 60000
+  retries: 5
+  write_timeout: 60000
+  routes:
+  - name: Communal-Space
+    paths:
+    - /unsafe
+    path_handling: v0
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 0
+    strip_path: true
+    https_redirect_status_code: 426
+    request_buffering: true
+    response_buffering: true
+- client_certificate: 7e050f1d-a375-406a-ade4-17eb661d9f53
+  connect_timeout: 60000
+  host: localhost
+  name: secure_server
+  port: 3001
+  protocol: https
+  read_timeout: 60000
+  retries: 5
+  write_timeout: 60000
+  tags:
+  - Restricted
+  routes:
+  - name: Secret-Vault
+    methods:
+    - GET
+    paths:
+    - /vault
+    path_handling: v0
+    preserve_host: false
+    protocols:
+    - http
+    - https
+    regex_priority: 0
+    strip_path: true
+    https_redirect_status_code: 426
+    request_buffering: true
+    response_buffering: true
+  plugins:
+  - name: basic-auth
+    config:
+      anonymous: null
+      hide_credentials: false
+      realm: service
+    enabled: true
+    protocols:
+    - http
+    - https
+    tags:
+    - User authentication
+  - name: session
+    config:
+      absolute_timeout: 86400
+      audience: default
+      cookie_domain: null
+      cookie_http_only: true
+      cookie_name: user-session
+      cookie_path: /
+      cookie_same_site: Strict
+      cookie_secure: false
+      idling_timeout: 900
+      logout_methods:
+      - POST
+      - DELETE
+      logout_post_arg: session_logout
+      logout_query_arg: session_logout
+      read_body_for_logout: false
+      remember: false
+      remember_absolute_timeout: 2.592e+06
+      remember_cookie_name: remember
+      remember_rolling_timeout: 604800
+      request_headers: null
+      response_headers: null
+      rolling_timeout: 3600
+      secret: 0YdQapkblRVnBaoiE8zJJ93jTKutnwJn7oMKCW3xrnsv
+      stale_ttl: 10
+      storage: cookie
+    enabled: true
+    protocols:
+    - grpc
+    - grpcs
+    - http
+    - https
+    tags:
+    - User authentication
+consumers:
+- custom_id: admin
+  username: admin
+  keyauth_credentials:
+  - key: adminkey
+    tags:
+    - admin api key
+  basicauth_credentials:
+  - username: admin
+    password: 700db262b4a4769e350453a7d9c1d81f9ee24dad
+- custom_id: anonymous
+  username: anonymous
+  plugins:
+  - name: request-termination
+    config:
+      body: null
+      content_type: null
+      echo: false
+      message: No anonymous users allowed!
+      status_code: 403
+      trigger: null
+    enabled: true
+    protocols:
+    - grpc
+    - grpcs
+    - http
+    - https
+    tags:
+    - Security
+  basicauth_credentials:
+  - username: anonymous
+    password: ceb8a673979f93302491fd9c64a3dd9bb0dc648f
+- custom_id: user
+  username: unpriviledged_user
+  keyauth_credentials:
+  - key: userkey
+  basicauth_credentials:
+  - username: user
+    password: 05c7f094ccfe07925ecffb4f2efee421d6bfb250
+plugins:
+- name: file-log
+  config:
+    custom_fields_by_lua: {}
+    path: /etc/kong/logfile.log
+    reopen: false
+  enabled: true
+  protocols:
+  - grpc
+  - grpcs
+  - http
+  - https
+certificates:
+- id: 7e050f1d-a375-406a-ade4-17eb661d9f53
+  cert: |-
+    -----BEGIN CERTIFICATE-----
+    MIIEOjCCAiKgAwIBAgIQHHnI10awPiSHyTogezRYmTANBgkqhkiG9w0BAQsFADAT
+    MREwDwYDVQQDEwhUaGVzaXNDQTAeFw0yMzEyMjgxMjQyNTlaFw0yNTA2MjgxMjQ3
+    MzVaMBQxEjAQBgNVBAMTCWxvY2FsaG9zdDCCASIwDQYJKoZIhvcNAQEBBQADggEP
+    ADCCAQoCggEBAMDMMnGmYMItVwxFIkaMPQ//5fLZKDr3gFUueA4pe0bmlWOqVCEo
+    gEyxUDY7KRpvSlqWq+J5kh20WP1FukAEjlg0u9B4wE+mCQmRMqR4EhJu479sAOVg
+    xixXLo6qZEZBBkIyW7X7dqvVO3DQgmjm8u2wgwgJAXzLlfeeESwoMVgZiF8L0xVJ
+    FpzYcDAchkyx8mcx63upnXLP71psQ+r/AzH9TsBlX6ZlBY7JX42Ow6wMPNIb4m6N
+    cSOauqeRdOVzP0GNrgUvQS5YaJRqQ5TInj4PWfMBA6ck8BGqqU5FSlC5tKstT8pN
+    WUfTGFQ3YBG16m17zPHyW8ZJKoudXRjwZqUCAwEAAaOBiDCBhTAOBgNVHQ8BAf8E
+    BAMCA7gwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMB0GA1UdDgQWBBTU
+    yWJmoh5E+Trtbc2oAKAV9jMLLzAfBgNVHSMEGDAWgBRlBnDGmeKDjah2raik2TQy
+    kTjC7jAUBgNVHREEDTALgglsb2NhbGhvc3QwDQYJKoZIhvcNAQELBQADggIBAF9L
+    MhluijAIDLxf24Je1B3j/ff5zLdq+mgnnSA7szEyYn6hB0pCKG4gCbrP82wo+eIQ
+    21XnGc/WviJ4IfYmNH3hC/bPxWPBitzcB/6FI5mhqzrhMkCy9MOfZBpudJDpivrl
+    muu66jW0bDc5Ju3vDJWud9T6UF1KCZPmijbav/mSQlnIj4tPebWFN43H96OGsr6P
+    KazDQAEqzQbEI7kC46s/1WHAgWJWZPeH5erZtzVOmJyljr7jxbQ0AwfidNDc0AdT
+    2XmE9Y/T10QsXlKKuFDTAkRhhXwFywrhyfKauy1L2jiTvZBBBNtlTkaZTv1RK3GO
+    Rs9uz083AtdFKBCvryUlarQkmiCSpqP6TFXY7GxeCSfmKYve8OQn0MNHsk0ce05K
+    0C4e8E6Q2mUZ/4fcar7lsQcafjZP1t2NDblDosDRWm7KOvBIVeyargnq14I+UuG/
+    RGaPOu0yZeozAxz50tOrtcsIdtqopuuCdfm/qUCJvlJ1gne6tIWJhawjdwOvEbSm
+    LQpzaEYLgJCbN2kK2tEvxu1BWLW2YefcDfj7yG1B+xG1o3Dx4x4q7dgO+2f7CXWo
+    Ohnfl3p5JtvoVYPtvnYD3uDDsWINjYvRugJIYJcpqcZ5svCTp0voJltO0CqskF5y
+    eisNmPMW71wpqPxPAgXC/0C+MmpXcFtIhBtYwW5H
+    -----END CERTIFICATE-----
+  key: |-
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIEowIBAAKCAQEAwMwycaZgwi1XDEUiRow9D//l8tkoOveAVS54Dil7RuaVY6pU
+    ISiATLFQNjspGm9KWpar4nmSHbRY/UW6QASOWDS70HjAT6YJCZEypHgSEm7jv2wA
+    5WDGLFcujqpkRkEGQjJbtft2q9U7cNCCaOby7bCDCAkBfMuV954RLCgxWBmIXwvT
+    FUkWnNhwMByGTLHyZzHre6mdcs/vWmxD6v8DMf1OwGVfpmUFjslfjY7DrAw80hvi
+    bo1xI5q6p5F05XM/QY2uBS9BLlholGpDlMiePg9Z8wEDpyTwEaqpTkVKULm0qy1P
+    yk1ZR9MYVDdgEbXqbXvM8fJbxkkqi51dGPBmpQIDAQABAoIBAQC1DQ0x/PRQZROh
+    yipt5bRSGhVvAM7u0Q4K8CB97CaAZnlTpthqawZQ/xI8W0I2ONyyRVwUyeWVT49i
+    CODmzWB/JMZa94phQaKrAVd1a+xMsyXc1SfiQAbaDOUDxK916gpej7vgIc1HgG7Z
+    enV83aSz4VarbQmgj+69IgsuVHBCMdRWnkZO1Sc/R2XckEl//8V088AmMLo3Nd0E
+    8csgzp4Voxp8RsgCJeQnQPiJu0oSg00CkkF0u1H41nDMMC37z9oa5zJSZmyBxLE2
+    TuFbWZ1PMuOtZEZD5GLmGIj3iSJnsqXOJ2Tmk0A3oR1X6hoSmofnjJzpDuYIRSFx
+    tgxgHj/hAoGBAPd0t+jNaKF1TCuxUAPdZzgr0vUqCxC9X+dfaAVyHythhpyy6+TO
+    8djJ0ZoHTiSrLL1KfjsJr/3Z6CN9iMN/jG1TDAfKTtqjlYVnEAeLkLUI1b5XXIaE
+    e3jV5T8f5gmB0lY8BAaPoCBCLOPjdmQKj+IW+deG18zZfSsd3j3/z8rjAoGBAMd0
+    WZXE6tkZpM36uun92GX0c99IdupAK0vrpcUzL2EyhqsAIAv1cPPPoOLdDmPpn5M0
+    jzpqgJRhlrsXqTZStbY71je+YloP9tIG6sqNWVoDeZ7vPAzkMKRYxkAm6MdpBZhE
+    LdURUA1ZxJluj1OxeXKVLsfntdUkltjmFA1nBJbXAoGAa8T7a3o5/UdWexjn3icI
+    kyAS6g77brjrEZstdGG1TXFV7NzHe4jdLysGC+zujW23OGE/BHs9mHLUdNBxRaNB
+    B0PJ04K6QOJJdiXih0azKQTGAfWOKE9+bqvJAWrlBnLxpfjRUAIxHJt1bXJc10j6
+    TN7wxHrHdUGrD6IcbigA2T0CgYBzc26zmaNS/Vv++sYc0ZnkEibMNRbYK0KklIeE
+    6UbgnS2EZ/Mk2PKDvkhjaQ9+V+nNfJv3dVRuDzr/mweQcTnLfUFXTPWDKkB1fBmG
+    G2GAEAjjLZl14NQjHVvMIHmXi7v4UmaxMW9D+xUotu1xxYYGBEJq5j3DXYWPkUZE
+    J8BpSwKBgCTtjv3wVH2W0icItQkcXtYcXb7BOavxjMg195MpLrLyeiq4jbcddWEf
+    HwGYyAKnzzONF+qT4n8znfcQ848hFAXSBMkG9kJvlRONCCu1h4XDYGVRvarN/IBh
+    kRkUJxpuaMKY3LGkJy/1su6QG6a+WguisgoGYfr2KbZWNJb0DMLU
+    -----END RSA PRIVATE KEY-----
+ca_certificates:
+- id: a454fe65-24bd-4c5e-867f-221f8f9c37d3
+  cert: |-
+    -----BEGIN CERTIFICATE-----
+    MIIE5jCCAs6gAwIBAgIBATANBgkqhkiG9w0BAQsFADATMREwDwYDVQQDEwhUaGVz
+    aXNDQTAeFw0yMzEyMjgxMjM3MzlaFw0yNTA2MjgxMjQ3MzZaMBMxETAPBgNVBAMT
+    CFRoZXNpc0NBMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAymhXRr7m
+    N12EtFgttO6pWVYuMsk90xk7FNDaeZpi758xF/qPIAceHf865b0dJXUFKDn2WY4R
+    axPQpt2wp9q/N5Jd3zyaHmAdqTXFp/vjDp3FyfO6mnNZHtusVzl5UncA/N1SxvGj
+    egabIm91Ak9KXyB/43WSFCV6Fm0qyXU4jVGjOFNcYDlB3cmqp59YGl1WO1GrprqA
+    k7uA/20c6qzYuQZS+zCTCiSosAEJcj8WtoTCYvlDA1F2dgA19iSQqnyVSEZsZthK
+    TcVw/s0Q2r5HKbmmb5Rutnef1IGcPCaMeA/nkaGO+1ys/GvzsJedFHVA4lCNLXrh
+    GceR7VqwQjdJFSMBfNYZ1aHubVU5jXM02DZUfHlJDEFgZUjMTKHNgZCpSFgsM/ul
+    SgbOyCW/iMJAeLYHblRmjf1UMTO0dSuCwp68xb567qjwT7a9RaGy/avDHf6YBT8J
+    OjxNv3fJIYE2zyChOsCFgAcPms3Sf2CLtcXwn1l+7f3V0yeIcoaqPf8sitHih4TP
+    Dk/De69B2xxPEQ8kiW8PRLqD4kyVzQVrqukg7WqrC0HyQOhVK8e0vaabCVoq0pbH
+    1UGADlZplAjFV6BvNADeZdtjWxfcLyu3oqEtuyMceKwuhRTvwzAFe04Zmadu2OcT
+    JzsvMQV2k9igCmQEG/X+WRc2Po7cgPRKhukCAwEAAaNFMEMwDgYDVR0PAQH/BAQD
+    AgEGMBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFGUGcMaZ4oONqHatqKTZ
+    NDKROMLuMA0GCSqGSIb3DQEBCwUAA4ICAQBGqUOFEDMgaF7gjPFY5j16DWGFM0jH
+    fVruqy22UENVpCGJRvJ/mOuRTHiA9UT8DS9VFM/sl+L1YeHu4P1pwbWSwlYi+Aof
+    KgoqKfyhtam7K2gSBHwTtq7wdDhMreNnNlXGvejdIHjweqGFleXm8Revg0G+hPir
+    tUDzr/glN+nYC17Ayj/AI991yr7g3TVP1BpzKUM7O0aH2k9HFoMMJCDH5huClsef
+    sn9FYxK60bPONuLnXSjmoMLd2VPQxwjs9iOreK2sZuQiiMxZjxlo8MANISh3UZM6
+    VMbbh549TQTzBYWBNQtMrxU9/XTnUoeMd7A895alsNma4Bzjf2kynYFnYJDItSZY
+    Jx9ykSegy1YEz/QLQi1M2LqnR2BlJ0TfbraXiDiHCvSqAo4L1qy3tRV1Ztcdex/U
+    cuSygmindvKwOpOpiVlm0E9CHVjVBDmvrZ6K84StAuqqpkMw5xkI4l6JLpugD+S4
+    H0MC6V3ukSnkbQPF4kxBaleMgdROc/Q6asjMHIKivcMgCZATmzI4ozi+qBxrxbsA
+    hX8kNE2y+T2Ok/WbN6Qn3vUzgNXRRkmeN9+24L762KvNJi4Ln5KW4QWRgAi/McaU
+    ZTUYhJvcFApk07FZW/KwGlusrAZMzupLtkE6aqk5pNH6a1nJiwmVMZagSTUuWDQ3
+    FW3ctuXSWDJ+jA==
+    -----END CERTIFICATE-----
