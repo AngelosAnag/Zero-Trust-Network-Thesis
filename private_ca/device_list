@@ -1,9 +1,0 @@
-pep_server: 
-	pep_server.crt
-	pep_server.key
-	ThesisCA.crt
-
-client:
-	client.crt
-	client.key
-	ThesisCA.crt
