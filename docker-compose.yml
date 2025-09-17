@@ -1,28 +1,32 @@
-version: '3.8'
-
 services:
-
-  redis_app:
-    build:
-      context: ./app
-    container_name: webapp
+  pomerium:
+    image: pomerium/pomerium:latest
+    environment:
+      POMERIUM_CONFIG: /pomerium/config.yaml
+    volumes:
+      - ./config.yaml:/pomerium/config.yaml:ro
+      - ./ec_private.pem:/pomerium/ec_private.pem:ro
     ports:
-      - 3000:3000
-    networks:
-      - backend
-      - redis
+      - "443:443"
 
-  redis_db:
-    image: redis
-    container_name: redis_db
+  verify:
+    image: pomerium/verify:latest
+    expose:
+      - "8000"
+    environment:
+    - JWKS_ENDPOINT=https://pomerium/.well-known/pomerium/jwks.json
+    
+  grafana:
+    image: grafana/grafana:latest
     ports:
-      - 6379:6379
-    networks:
-      - redis
-
-networks:
-  backend:
-  redis:
-
-volumes:
-  postgredata: {}
+      - "3000:3000"
+      
+  hello:
+    image: python:3.12-slim
+    working_dir: /app
+    command: bash -lc "pip install fastapi uvicorn pyjwt requests && uvicorn app:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - ./Internal-Resources/app.py:/app/app.py:ro
+    expose: [ "8000" ]
+    ports:
+      - 8000:8000
