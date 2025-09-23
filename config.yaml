@@ -1,7 +1,6 @@
 authenticate_service_url: https://authenticate.pomerium.app
 
 signing_key_file: '/pomerium/ec_private.pem'
-autocert: true
 
 jwt_claims_headers:
   X-Pomerium-Claim-Email: email
@@ -11,28 +10,22 @@ jwt_claims_headers:
 routes:
   - from: https://verify.localhost.pomerium.io
     to: http://verify:8000
+    pass_identity_headers: true
     policy:
       - allow:
           or:
-            - email:
-                is: angelosanag@protonmail.com
             - claim/Name: Anagnostopoulos Angelos
+            - claim/groups: admin
       - deny:
-          and:
-            - email:
-                starts_with: admin
-
-    pass_identity_headers: true
-
+          or:
+            - claim/groups: user
+    
   - from: https://grafana.localhost.pomerium.io
     to: http://grafana:3000
-    allow_any_authenticated_user: true
     pass_identity_headers: true
-  
-  - from: https://pythonserver.localhost.pomerium.io
-    to: http://hello:8000
     policy:
       - allow:
-          and:
-            - domain:
-                is: protonmail.com
+          or:
+            - claim/groups: admin
+            - claim/groups: user
+            - claim/Name: Anagnostopoulos Angelos

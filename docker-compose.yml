@@ -14,19 +14,9 @@ services:
     expose:
       - "8000"
     environment:
-    - JWKS_ENDPOINT=https://pomerium/.well-known/pomerium/jwks.json
-    
+      - JWKS_ENDPOINT=https://pomerium/.well-known/pomerium/jwks.json
+
   grafana:
     image: grafana/grafana:latest
     ports:
       - "3000:3000"
-
-  hello:
-    image: python:3.12-slim
-    working_dir: /app
-    command: bash -lc "pip install fastapi uvicorn pyjwt requests && uvicorn app:app --host 0.0.0.0 --port 8000"
-    volumes:
-      - ./app.py:/app/app.py:ro
-    expose: [ "8000" ]
-    ports:
-      - 8000:8000
